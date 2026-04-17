@@ -60,8 +60,26 @@ const CURRENCIES = [
 // ── Default users (admin pre-creates these) ──────────────────────────────────
 const DEFAULT_USERS = [
   { id:"admin", username:"mahade",   password:"admin",   name:"Admin User",    role:"admin" },
-  { id:"u001",  username:"user1",   password:"pass1234",   name:"User One",      role:"user"  },
 ];
+
+// ── User localStorage helpers ─────────────────────────────────────────────────
+const USERS_KEY = "budget_app_users";
+const loadUsers = () => {
+  try {
+    const saved = localStorage.getItem(USERS_KEY);
+    if(saved) {
+      const parsed = JSON.parse(saved);
+      // Always ensure admin exists with correct credentials
+      const hasAdmin = parsed.find(u=>u.id==="admin");
+      if(!hasAdmin) return [DEFAULT_USERS[0], ...parsed.filter(u=>u.role!=="admin")];
+      return parsed;
+    }
+  } catch(e) {}
+  return DEFAULT_USERS;
+};
+const saveUsers = (users) => {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch(e) {}
+};
 
 // ── Storage helpers (in-memory per session, keyed by userId+year) ────────────
 const STORE = {};
@@ -137,7 +155,10 @@ const EXP_COLORS = {
 // ════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState(DEFAULT_USERS);
+  const [users, setUsers] = useState(loadUsers);
+
+  // Save users to localStorage whenever they change
+  useEffect(()=>{ saveUsers(users); },[users]);
 
   if(!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser} />;
   return (
@@ -191,9 +212,6 @@ function LoginScreen({users,onLogin}) {
         </div>
         {err&&<div style={{color:"#f87171",fontSize:"0.8rem",marginBottom:12,textAlign:"center"}}>{err}</div>}
         <button onClick={handleLogin} style={S.loginBtn}>🔐 লগইন করুন</button>
-        <div style={{marginTop:14,padding:12,background:"#0f172a",borderRadius:8,fontSize:"0.72rem",color:"#6b7280",textAlign:"center"}}>
-          Demo: admin / admin123
-        </div>
       </div>
     </div>
   );
