@@ -59,7 +59,7 @@ const CURRENCIES = [
 
 // ── Default users (admin pre-creates these) ──────────────────────────────────
 const DEFAULT_USERS = [
-  { id:"admin", username:"admin",   password:"admin3003",   name:"Admin User",    role:"admin" },
+  { id:"admin", username:"mahade",   password:"admin",   name:"Admin User",    role:"admin" },
   { id:"u001",  username:"user1",   password:"pass1234",   name:"User One",      role:"user"  },
 ];
 
