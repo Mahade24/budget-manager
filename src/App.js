@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const MONTHS    = ["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","আগস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"];
@@ -12,7 +12,6 @@ const HIGH_OPTIONS   = ["Crypto","E-Commerce","Business","অন্যান্�
 const INVEST_ICONS  = {"E Wallate":"💳","Bank":"🏦","Gold":"🥇","Land":"🏗️","Bond":"📜","Crypto":"₿","E-Commerce":"🛒","Business":"🏢","অন্যান্য":"📦"};
 const INVEST_COLORS = {"E Wallate":"#4ade80","Bank":"#60a5fa","Gold":"#facc15","Land":"#fb923c","Bond":"#a78bfa","Crypto":"#f87171","E-Commerce":"#38bdf8","Business":"#e879f9","অন্যান্য":"#94a3b8"};
 
-// ── All world currencies ─────────────────────────────────────────────────────
 const CURRENCIES = [
   {code:"BDT",symbol:"৳",name:"Bangladeshi Taka"},
   {code:"MYR",symbol:"RM",name:"Malaysian Ringgit"},
@@ -57,51 +56,65 @@ const CURRENCIES = [
   {code:"GHS",symbol:"₵",name:"Ghanaian Cedi"},
 ];
 
-// ── Default users (admin pre-creates these) ──────────────────────────────────
-const DEFAULT_USERS = [
-  { id:"admin", username:"mahade",   password:"admin",   name:"Admin User",    role:"admin" },
-];
+const EXP_LABELS = {familySupport:"ফ্যামিলি সাপোর্ট",barerKaj:"বাড়ির কাজ",visaRenew:"ভিসা রিনিউ",dharPorishod:"ধার পরিশোধ",khawarKhoroch:"খাওয়ার খরচ",onnyo:"অন্যান্য"};
+const EXP_ICONS  = {familySupport:"👨‍👩‍👧",barerKaj:"🏠",visaRenew:"🛂",dharPorishod:"💳",khawarKhoroch:"🍽️",onnyo:"📦"};
+const EXP_COLORS = {familySupport:"#f87171",barerKaj:"#fb923c",visaRenew:"#facc15",dharPorishod:"#a78bfa",khawarKhoroch:"#4ade80",onnyo:"#94a3b8"};
 
-// ── User localStorage helpers ─────────────────────────────────────────────────
-const USERS_KEY = "budget_app_users";
+// ════════════════════════════════════════════════════════════════════════════
+// ── localStorage helpers ─────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+
+// ADMIN is always hardcoded — never lost
+const HARDCODED_ADMIN = { id:"admin", username:"mahade", password:"admin", name:"Admin", role:"admin" };
+
+const LS = {
+  get: (key, fallback=null) => {
+    try { const v=localStorage.getItem(key); return v?JSON.parse(v):fallback; } catch(e){ return fallback; }
+  },
+  set: (key, val) => {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){}
+  },
+};
+
+// Load users — always merge hardcoded admin so it's never lost
 const loadUsers = () => {
-  try {
-    const saved = localStorage.getItem(USERS_KEY);
-    if(saved) {
-      const parsed = JSON.parse(saved);
-      // Always ensure admin exists with correct credentials
-      const hasAdmin = parsed.find(u=>u.id==="admin");
-      if(!hasAdmin) return [DEFAULT_USERS[0], ...parsed.filter(u=>u.role!=="admin")];
-      return parsed;
-    }
-  } catch(e) {}
-  return DEFAULT_USERS;
+  const saved = LS.get("bm_users", []);
+  const withoutAdmin = saved.filter(u=>u.id!=="admin");
+  return [HARDCODED_ADMIN, ...withoutAdmin];
 };
+
 const saveUsers = (users) => {
-  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch(e) {}
+  // Never save admin to localStorage — it's always from hardcode
+  LS.set("bm_users", users.filter(u=>u.id!=="admin"));
 };
 
-// ── Storage helpers (in-memory per session, keyed by userId+year) ────────────
-const STORE = {};
-const storeKey = (uid,year) => `${uid}_${year}`;
-
-const loadUserData = (uid,year) => {
-  const k = storeKey(uid,year);
-  if(STORE[k]) return STORE[k];
-  const fresh = {};
-  MONTHS_EN.forEach(m=>{ fresh[m] = initialMonthData(); });
-  STORE[k] = fresh;
-  return fresh;
-};
-const saveUserData = (uid,year,data) => { STORE[storeKey(uid,year)] = data; };
-
+// ── Budget data per user per year ─────────────────────────────────────────────
 const initialMonthData = () => ({
   income:  {beton:"",saidIncome:"",onnyo:""},
   expense: {familySupport:"",barerKaj:"",visaRenew:"",dharPorishod:"",khawarKhoroch:"",onnyo:""},
   investChoice: {safe:["E Wallate"],medium:["Gold"],high:["Crypto"]},
 });
 
-// ── Math helpers ─────────────────────────────────────────────────────────────
+const dataKey = (uid, year) => `bm_data_${uid}_${year}`;
+
+const loadBudgetData = (uid, year) => {
+  const saved = LS.get(dataKey(uid, year), null);
+  if(saved) {
+    // Fill missing months
+    const full = {};
+    MONTHS_EN.forEach(m=>{ full[m] = saved[m] || initialMonthData(); });
+    return full;
+  }
+  const fresh = {};
+  MONTHS_EN.forEach(m=>{ fresh[m] = initialMonthData(); });
+  return fresh;
+};
+
+const saveBudgetData = (uid, year, data) => {
+  LS.set(dataKey(uid, year), data);
+};
+
+// ── Math helpers ──────────────────────────────────────────────────────────────
 const num = (v) => parseFloat(v)||0;
 const fmtC = (n, sym) => {
   if(!n||isNaN(n)||n===0) return `${sym}0.00`;
@@ -109,12 +122,12 @@ const fmtC = (n, sym) => {
 };
 
 const calcMonth = (data) => {
-  const {income:inc,expense:exp} = data;
-  const totalIncome  = num(inc.beton)+num(inc.saidIncome)+num(inc.onnyo);
+  const {income:inc, expense:exp} = data;
+  const totalIncome = num(inc.beton)+num(inc.saidIncome)+num(inc.onnyo);
   const expBreakdown = {
-    familySupport: num(exp.familySupport), barerKaj: num(exp.barerKaj),
-    visaRenew:     num(exp.visaRenew),     dharPorishod: num(exp.dharPorishod),
-    khawarKhoroch: num(exp.khawarKhoroch), onnyo: num(exp.onnyo),
+    familySupport:num(exp.familySupport), barerKaj:num(exp.barerKaj),
+    visaRenew:num(exp.visaRenew), dharPorishod:num(exp.dharPorishod),
+    khawarKhoroch:num(exp.khawarKhoroch), onnyo:num(exp.onnyo),
   };
   const totalExpense = Object.values(expBreakdown).reduce((a,v)=>a+v,0);
   const totalSaving  = totalIncome - totalExpense;
@@ -135,21 +148,6 @@ const splitEqually = (total,choices) => {
   return Object.fromEntries(choices.map(c=>[c,each]));
 };
 
-// ── Expense labels ───────────────────────────────────────────────────────────
-const EXP_LABELS = {
-  familySupport:"ফ্যামিলি সাপোর্ট",barerKaj:"বাড়ির কাজ",
-  visaRenew:"ভিসা রিনিউ",dharPorishod:"ধার পরিশোধ",
-  khawarKhoroch:"খাওয়ার খরচ",onnyo:"অন্যান্য",
-};
-const EXP_ICONS = {
-  familySupport:"👨‍👩‍👧",barerKaj:"🏠",visaRenew:"🛂",
-  dharPorishod:"💳",khawarKhoroch:"🍽️",onnyo:"📦",
-};
-const EXP_COLORS = {
-  familySupport:"#f87171",barerKaj:"#fb923c",visaRenew:"#facc15",
-  dharPorishod:"#a78bfa",khawarKhoroch:"#4ade80",onnyo:"#94a3b8",
-};
-
 // ════════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ════════════════════════════════════════════════════════════════════════════
@@ -157,18 +155,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState(loadUsers);
 
-  // Save users to localStorage whenever they change
   useEffect(()=>{ saveUsers(users); },[users]);
 
-  if(!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser} />;
-  return (
-    <BudgetManager
-      currentUser={currentUser}
-      users={users}
-      setUsers={setUsers}
-      onLogout={()=>setCurrentUser(null)}
-    />
-  );
+  if(!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser}/>;
+  return <BudgetManager currentUser={currentUser} users={users} setUsers={setUsers} onLogout={()=>setCurrentUser(null)}/>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -181,8 +171,8 @@ function LoginScreen({users,onLogin}) {
   const [show,setShow]   = useState(false);
 
   const handleLogin = () => {
-    const u = users.find(u=>u.username===uname&&u.password===pass);
-    if(u) { setErr(""); onLogin(u); }
+    const u = users.find(u=>u.username.trim()===uname.trim()&&u.password===pass);
+    if(u){ setErr(""); onLogin(u); }
     else setErr("❌ ভুল Username বা Password");
   };
 
@@ -196,15 +186,15 @@ function LoginScreen({users,onLogin}) {
         </div>
         <div style={{marginBottom:14}}>
           <label style={{fontSize:"0.78rem",color:"#94a3b8",display:"block",marginBottom:5}}>👤 Username</label>
-          <input style={{...S.loginInput}} value={uname} onChange={e=>setUname(e.target.value)}
-            placeholder="আপনার username দিন" onKeyDown={e=>e.key==="Enter"&&handleLogin()} />
+          <input style={S.loginInput} value={uname} onChange={e=>setUname(e.target.value)}
+            placeholder="username দিন" onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
         </div>
         <div style={{marginBottom:20}}>
           <label style={{fontSize:"0.78rem",color:"#94a3b8",display:"block",marginBottom:5}}>🔑 Password</label>
           <div style={{position:"relative"}}>
             <input style={{...S.loginInput,paddingRight:44}} value={pass}
               onChange={e=>setPass(e.target.value)} type={show?"text":"password"}
-              placeholder="Password দিন" onKeyDown={e=>e.key==="Enter"&&handleLogin()} />
+              placeholder="password দিন" onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
             <button onClick={()=>setShow(!show)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:"1rem"}}>
               {show?"🙈":"👁️"}
             </button>
@@ -212,6 +202,9 @@ function LoginScreen({users,onLogin}) {
         </div>
         {err&&<div style={{color:"#f87171",fontSize:"0.8rem",marginBottom:12,textAlign:"center"}}>{err}</div>}
         <button onClick={handleLogin} style={S.loginBtn}>🔐 লগইন করুন</button>
+        <div style={{marginTop:14,padding:10,background:"#0f172a",borderRadius:8,fontSize:"0.7rem",color:"#6b7280",textAlign:"center"}}>
+          Admin: mahade / admin
+        </div>
       </div>
     </div>
   );
@@ -221,29 +214,27 @@ function LoginScreen({users,onLogin}) {
 // BUDGET MANAGER MAIN
 // ════════════════════════════════════════════════════════════════════════════
 function BudgetManager({currentUser,users,setUsers,onLogout}) {
-  const [activeTab,   setActiveTab]   = useState("dashboard");
-  const [activeMonth, setActiveMonth] = useState(MONTHS_EN[new Date().getMonth()]);
-  const [selectedYear,setSelectedYear]= useState(new Date().getFullYear());
-  const [currency,    setCurrency]    = useState(CURRENCIES[1]); // MYR default
-  const [rates,       setRates]       = useState({});
-  const [rateLoading, setRateLoading] = useState(false);
-  const [rateUpdated, setRateUpdated] = useState(null);
-  const [allData,     setAllData]     = useState(()=>loadUserData(currentUser.id,new Date().getFullYear()));
-  const [showSettings,setShowSettings]= useState(false);
-  const [showUserMgr, setShowUserMgr] = useState(false);
+  const [activeTab,    setActiveTab]    = useState("dashboard");
+  const [activeMonth,  setActiveMonth]  = useState(MONTHS_EN[new Date().getMonth()]);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [currency,     setCurrency]     = useState(CURRENCIES[1]);
+  const [rates,        setRates]        = useState({});
+  const [rateLoading,  setRateLoading]  = useState(false);
+  const [rateUpdated,  setRateUpdated]  = useState(null);
+  const [showUserMgr,  setShowUserMgr]  = useState(false);
+  const [allData,      setAllData]      = useState(()=>loadBudgetData(currentUser.id, new Date().getFullYear()));
 
-  // Load data when year changes
+  // Year change → load that year's data
   useEffect(()=>{
-    const d = loadUserData(currentUser.id,selectedYear);
-    setAllData(d);
-  },[selectedYear,currentUser.id]);
+    setAllData(loadBudgetData(currentUser.id, selectedYear));
+  },[selectedYear, currentUser.id]);
 
-  // Auto-save data
+  // Auto-save to localStorage on every change
   useEffect(()=>{
-    saveUserData(currentUser.id,selectedYear,allData);
-  },[allData,currentUser.id,selectedYear]);
+    saveBudgetData(currentUser.id, selectedYear, allData);
+  },[allData, currentUser.id, selectedYear]);
 
-  // Fetch live rates via Anthropic API
+  // Live exchange rates
   const fetchLiveRates = useCallback(async()=>{
     setRateLoading(true);
     try {
@@ -252,26 +243,23 @@ function BudgetManager({currentUser,users,setUsers,onLogout}) {
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          messages:[{role:"user",content:`Give me the current approximate exchange rates for ${currency.code} against USD, EUR, GBP, BDT, MYR, SAR, AED, SGD, INR, QAR. Return ONLY a valid JSON object like: {"USD":1.23,"EUR":1.10,...} with no explanation or markdown.`}]
+          max_tokens:800,
+          messages:[{role:"user",content:`Current exchange rates for ${currency.code} against: USD,EUR,GBP,BDT,MYR,SAR,AED,SGD,INR,QAR. Reply ONLY with JSON like {"USD":4.44,"EUR":4.80} no markdown no text.`}]
         })
       });
       const data = await res.json();
-      const text = data.content?.map(i=>i.text||"").join("") || "";
+      const text = (data.content||[]).map(i=>i.text||"").join("");
       const clean = text.replace(/```json|```/g,"").trim();
-      const parsed = JSON.parse(clean);
-      setRates(parsed);
+      setRates(JSON.parse(clean));
       setRateUpdated(new Date().toLocaleTimeString());
-    } catch(e) {
-      console.error("Rate fetch failed",e);
-    }
+    } catch(e){ console.error(e); }
     setRateLoading(false);
   },[currency.code]);
 
   useEffect(()=>{ fetchLiveRates(); },[currency.code]);
 
   const sym = currency.symbol;
-  const fmt = (n) => fmtC(n,sym);
+  const fmt = (n) => fmtC(n, sym);
 
   const updateField = useCallback((month,section,field,value)=>{
     setAllData(prev=>({...prev,[month]:{...prev[month],[section]:{...prev[month][section],[field]:value}}}));
@@ -284,12 +272,13 @@ function BudgetManager({currentUser,users,setUsers,onLogout}) {
     });
   },[]);
 
+  // Dashboard calculations
   const dashData = MONTHS_EN.map((m,i)=>{
     const d=allData[m]; const c=calcMonth(d);
     return{month:MONTHS[i],monthEn:m,...c,
-      safeMap:splitEqually(c.investSafe,d.investChoice.safe),
-      medMap:splitEqually(c.investMedium,d.investChoice.medium),
-      highMap:splitEqually(c.investHigh,d.investChoice.high),
+      safeMap: splitEqually(c.investSafe,  d.investChoice.safe),
+      medMap:  splitEqually(c.investMedium,d.investChoice.medium),
+      highMap: splitEqually(c.investHigh,  d.investChoice.high),
     };
   });
 
@@ -303,7 +292,6 @@ function BudgetManager({currentUser,users,setUsers,onLogout}) {
     Object.entries(map).forEach(([k,v])=>{platformTotals[k]=(platformTotals[k]||0)+v;})
   ));
 
-  // Total expense by category across all months
   const expenseTotals = {};
   Object.keys(EXP_LABELS).forEach(k=>{expenseTotals[k]=0;});
   dashData.forEach(d=>Object.keys(EXP_LABELS).forEach(k=>{
@@ -314,53 +302,46 @@ function BudgetManager({currentUser,users,setUsers,onLogout}) {
   const investFund = dashData.reduce((a,d)=>a+d.investMedium+d.investHigh,0);
   const cur  = allData[activeMonth];
   const calc = calcMonth(cur);
-
   const tabs = [{id:"dashboard",label:"ড্যাসবোর্ড"},...MONTHS_EN.map((m,i)=>({id:m,label:MONTHS[i]}))];
 
   return (
     <div style={S.root}>
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={S.header}>
         <div style={S.headerInner}>
           <div>
             <div style={S.headerTitle}>💰 বাজেট ম্যানেজার</div>
             <div style={S.headerSub}>👤 {currentUser.name}</div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {/* Year selector */}
-            <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))}
-              style={S.yearSelect}>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))} style={S.yearSelect}>
               {YEARS.map(y=><option key={y} value={y}>{y}</option>)}
             </select>
-            {/* Currency selector */}
-            <select value={currency.code} onChange={e=>{
-                const c=CURRENCIES.find(c=>c.code===e.target.value);
-                if(c) setCurrency(c);
-              }} style={S.yearSelect}>
+            <select value={currency.code} onChange={e=>{const c=CURRENCIES.find(c=>c.code===e.target.value);if(c)setCurrency(c);}} style={S.yearSelect}>
               {CURRENCIES.map(c=><option key={c.code} value={c.code}>{c.symbol} {c.code}</option>)}
             </select>
             {currentUser.role==="admin"&&(
-              <button onClick={()=>setShowUserMgr(true)} style={S.iconBtn} title="User Manager">👥</button>
+              <button onClick={()=>setShowUserMgr(true)} style={S.iconBtn}>👥</button>
             )}
-            <button onClick={onLogout} style={{...S.iconBtn,background:"#7f1d1d"}} title="Logout">🚪</button>
+            <button onClick={onLogout} style={{...S.iconBtn,background:"#7f1d1d",color:"#fca5a5"}}>🚪</button>
           </div>
         </div>
-        {/* Live rate bar */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,fontSize:"0.7rem",color:"#94a3b8",flexWrap:"wrap"}}>
+        {/* Rate bar */}
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,fontSize:"0.68rem",color:"#94a3b8",flexWrap:"wrap"}}>
           <button onClick={fetchLiveRates} disabled={rateLoading}
             style={{padding:"2px 10px",background:rateLoading?"#1e293b":"#1e3a5f",border:"1px solid #334155",borderRadius:10,color:"#60a5fa",fontSize:"0.68rem",cursor:"pointer",fontFamily:"inherit"}}>
             {rateLoading?"⏳ লোড হচ্ছে...":"🔄 রেট আপডেট"}
           </button>
           {rateUpdated&&<span style={{color:"#4ade80"}}>✓ {rateUpdated}</span>}
-          {Object.entries(rates).slice(0,5).map(([k,v])=>(
-            <span key={k} style={{background:"#1e293b",padding:"2px 7px",borderRadius:8}}>
-              {currency.code}/{k}: <span style={{color:"#facc15"}}>{Number(v).toFixed(4)}</span>
+          {Object.entries(rates).slice(0,4).map(([k,v])=>(
+            <span key={k} style={{background:"#1e293b",padding:"2px 6px",borderRadius:6}}>
+              {currency.code}/{k}: <span style={{color:"#facc15"}}>{Number(v).toFixed(3)}</span>
             </span>
           ))}
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* Tabs */}
       <div style={S.tabBar}>
         <div style={S.tabScroll}>
           {tabs.map(t=>(
@@ -374,16 +355,15 @@ function BudgetManager({currentUser,users,setUsers,onLogout}) {
 
       <div style={S.content}>
         {activeTab==="dashboard"
-          ? <DashboardView dashData={dashData} grandTotal={grandTotal} joruriFund={joruriFund}
+          ?<DashboardView dashData={dashData} grandTotal={grandTotal} joruriFund={joruriFund}
               investFund={investFund} platformTotals={platformTotals} expenseTotals={expenseTotals}
-              fmt={fmt} sym={sym} selectedYear={selectedYear} currentUser={currentUser} allData={allData} />
-          : <MonthView month={activeMonth} monthLabel={MONTHS[MONTHS_EN.indexOf(activeMonth)]}
+              fmt={fmt} sym={sym} selectedYear={selectedYear} currentUser={currentUser} allData={allData}/>
+          :<MonthView month={activeMonth} monthLabel={MONTHS[MONTHS_EN.indexOf(activeMonth)]}
               data={cur} calc={calc} updateField={updateField} toggleInvest={toggleInvest}
-              fmt={fmt} sym={sym} selectedYear={selectedYear} currentUser={currentUser} />
+              fmt={fmt} sym={sym} selectedYear={selectedYear} currentUser={currentUser}/>
         }
       </div>
 
-      {/* User Manager Modal */}
       {showUserMgr&&<UserManager users={users} setUsers={setUsers} onClose={()=>setShowUserMgr(false)}/>}
     </div>
   );
@@ -398,24 +378,18 @@ function MonthView({month,monthLabel,data,calc,updateField,toggleInvest,fmt,sym,
   const safeMap=splitEqually(calc.investSafe,data.investChoice.safe);
   const medMap =splitEqually(calc.investMedium,data.investChoice.medium);
   const highMap=splitEqually(calc.investHigh,data.investChoice.high);
-  const status = calc.savingPct>=100?"🎉 দারুণ!":calc.savingPct>=50?"😊 ভালো":calc.savingPct>=20?"😐 ঠিকঠাক":"😟 কম";
+  const status=calc.savingPct>=100?"🎉 দারুণ!":calc.savingPct>=50?"😊 ভালো":calc.savingPct>=20?"😐 ঠিকঠাক":"😟 কম";
 
-  const incRows = [
-    {key:"beton",label:"বেতন",icon:"💼"},{key:"saidIncome",label:"সাইড ইনকাম",icon:"💡"},
-    {key:"onnyo",label:"অন্যান্য",icon:"➕"},
-  ];
-  const expRows = Object.entries(EXP_LABELS).map(([key,label])=>({key,label,icon:EXP_ICONS[key]}));
-
-  const handlePDF = () => generatePDF({month,monthLabel,data,calc,fmt,sym,selectedYear,currentUser});
+  const incRows=[{key:"beton",label:"বেতন",icon:"💼"},{key:"saidIncome",label:"সাইড ইনকাম",icon:"💡"},{key:"onnyo",label:"অন্যান্য",icon:"➕"}];
+  const expRows=Object.entries(EXP_LABELS).map(([key,label])=>({key,label,icon:EXP_ICONS[key]}));
 
   return (
     <div style={S.wrap}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={S.pageTitle}>{monthLabel} {selectedYear}</div>
-        <button onClick={handlePDF} style={S.pdfBtn}>📄 PDF</button>
+        <button onClick={()=>generatePDF({month,monthLabel,data,calc,fmt,sym,selectedYear,currentUser})} style={S.pdfBtn}>📄 PDF</button>
       </div>
 
-      {/* KPIs */}
       <div style={S.kpiGrid}>
         {[{l:"মোট ইনকাম",v:fmt(calc.totalIncome),c:"#4ade80"},{l:"মোট খরচ",v:fmt(calc.totalExpense),c:"#f87171"},
           {l:"সেভিং",v:fmt(calc.totalSaving),c:"#facc15"},{l:"সেভিং %",v:`${calc.savingPct.toFixed(1)}%`,c:"#60a5fa"},
@@ -441,7 +415,6 @@ function MonthView({month,monthLabel,data,calc,updateField,toggleInvest,fmt,sym,
         </div>
       </div>
 
-      {/* 50-30-20 */}
       <div style={S.card}>
         <div style={{...S.cardHead,background:"linear-gradient(90deg,#1e3a5f,#1e40af)"}}>🎯 50/30/20 টার্গেট</div>
         <div style={S.ruleGrid}>
@@ -458,19 +431,12 @@ function MonthView({month,monthLabel,data,calc,updateField,toggleInvest,fmt,sym,
         </div>
       </div>
 
-      {/* Investment */}
       <div style={S.card}>
         <div style={{...S.cardHead,background:"linear-gradient(90deg,#312e81,#4c1d95)"}}>🚀 এই মাস কোথায় রাখছেন?</div>
         <div style={S.infoBox}>⚠️ বাটন ট্যাপ করুন — একাধিক বেছে নিলে সমানভাবে ভাগ হবে।</div>
-        <InvestTierRow rank="1" color="#4ade80" tagBg="#065f46" title="Safe (নিরাপদ)" pct="50%"
-          amount={fmt(calc.investSafe)} options={SAFE_OPTIONS} selected={data.investChoice.safe}
-          onToggle={v=>tog("safe",v)} splitMap={safeMap} fmt={fmt}/>
-        <InvestTierRow rank="2" color="#facc15" tagBg="#78350f" title="Medium (Balanced)" pct="30%"
-          amount={fmt(calc.investMedium)} options={MEDIUM_OPTIONS} selected={data.investChoice.medium}
-          onToggle={v=>tog("medium",v)} splitMap={medMap} fmt={fmt}/>
-        <InvestTierRow rank="3" color="#f87171" tagBg="#7f1d1d" title="High Risk" pct="20%"
-          amount={fmt(calc.investHigh)} options={HIGH_OPTIONS} selected={data.investChoice.high}
-          onToggle={v=>tog("high",v)} splitMap={highMap} fmt={fmt}/>
+        <InvestTierRow rank="1" color="#4ade80" tagBg="#065f46" title="Safe (নিরাপদ)"    pct="50%" amount={fmt(calc.investSafe)}   options={SAFE_OPTIONS}   selected={data.investChoice.safe}   onToggle={v=>tog("safe",v)}   splitMap={safeMap} fmt={fmt}/>
+        <InvestTierRow rank="2" color="#facc15" tagBg="#78350f" title="Medium (Balanced)" pct="30%" amount={fmt(calc.investMedium)} options={MEDIUM_OPTIONS} selected={data.investChoice.medium} onToggle={v=>tog("medium",v)} splitMap={medMap}  fmt={fmt}/>
+        <InvestTierRow rank="3" color="#f87171" tagBg="#7f1d1d" title="High Risk"          pct="20%" amount={fmt(calc.investHigh)}  options={HIGH_OPTIONS}   selected={data.investChoice.high}   onToggle={v=>tog("high",v)}   splitMap={highMap} fmt={fmt}/>
         <TotalRow label="মোট ইনভেস্ট" value={fmt(calc.totalInvest)} color="#a78bfa" highlight/>
       </div>
     </div>
@@ -480,39 +446,36 @@ function MonthView({month,monthLabel,data,calc,updateField,toggleInvest,fmt,sym,
 // ════════════════════════════════════════════════════════════════════════════
 // DASHBOARD VIEW
 // ════════════════════════════════════════════════════════════════════════════
-function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals,expenseTotals,fmt,sym,selectedYear,currentUser,allData}) {
-  const safeTotal = SAFE_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
-  const medTotal  = MEDIUM_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
-  const highTotal = HIGH_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
-  const allInvest = safeTotal+medTotal+highTotal;
-  const totalExp  = Object.values(expenseTotals).reduce((a,v)=>a+v,0);
+function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals,expenseTotals,fmt,sym,selectedYear,currentUser}) {
+  const safeTotal=SAFE_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
+  const medTotal =MEDIUM_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
+  const highTotal=HIGH_OPTIONS.reduce((a,p)=>a+(platformTotals[p]||0),0);
+  const allInvest=safeTotal+medTotal+highTotal;
+  const totalExp =Object.values(expenseTotals).reduce((a,v)=>a+v,0);
 
   return (
     <div style={S.wrap}>
       <div style={S.pageTitle}>📊 ড্যাসবোর্ড — {selectedYear}</div>
 
-      {/* Grand KPIs */}
       <div style={{...S.kpiGrid,gridTemplateColumns:"repeat(3,1fr)"}}>
         {[
-          {l:"মোট ইনকাম",    v:fmt(grandTotal.income),  c:"#4ade80"},
-          {l:"মোট খরচ",      v:fmt(grandTotal.expense), c:"#f87171"},
-          {l:"মোট সেভিং",    v:fmt(grandTotal.saving),  c:"#facc15"},
-          {l:"জরুরি ফান্ড",  v:fmt(joruriFund),          c:"#60a5fa"},
-          {l:"ইনভেস্ট ফান্ড",v:fmt(investFund),          c:"#a78bfa"},
-          {l:"সেভিং রেট",   v:grandTotal.income>0?`${(grandTotal.saving/grandTotal.income*100).toFixed(1)}%`:"—", c:"#fb923c"},
+          {l:"মোট ইনকাম",     v:fmt(grandTotal.income),  c:"#4ade80"},
+          {l:"মোট খরচ",       v:fmt(grandTotal.expense), c:"#f87171"},
+          {l:"মোট সেভিং",     v:fmt(grandTotal.saving),  c:"#facc15"},
+          {l:"জরুরি ফান্ড",   v:fmt(joruriFund),          c:"#60a5fa"},
+          {l:"ইনভেস্ট ফান্ড", v:fmt(investFund),          c:"#a78bfa"},
+          {l:"সেভিং রেট",    v:grandTotal.income>0?`${(grandTotal.saving/grandTotal.income*100).toFixed(1)}%`:"—",c:"#fb923c"},
         ].map((s,i)=>(
           <div key={i} style={S.kpiCard}>
-            <div style={{...S.kpiVal,color:s.c,fontSize:"0.88rem"}}>{s.v}</div>
+            <div style={{...S.kpiVal,color:s.c,fontSize:"0.85rem"}}>{s.v}</div>
             <div style={S.kpiLabel}>{s.l}</div>
           </div>
         ))}
       </div>
 
-      {/* ── Expense Breakdown ── */}
+      {/* Expense breakdown */}
       <div style={S.card}>
-        <div style={{...S.cardHead,background:"linear-gradient(90deg,#7f1d1d,#991b1b)"}}>
-          📉 খরচ কোন খাতে কত যাচ্ছে — {selectedYear}
-        </div>
+        <div style={{...S.cardHead,background:"linear-gradient(90deg,#7f1d1d,#991b1b)"}}>📉 খরচ কোন খাতে কত — {selectedYear}</div>
         <div style={{padding:14}}>
           {Object.entries(EXP_LABELS).map(([key,label])=>{
             const v=expenseTotals[key]||0;
@@ -522,29 +485,23 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
               <div key={key} style={{marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.82rem",marginBottom:4}}>
                   <span style={{color:cl,fontWeight:600}}>{EXP_ICONS[key]} {label}</span>
-                  <span>
-                    <span style={{color:"#facc15",fontWeight:700}}>{fmt(v)}</span>
-                    <span style={{color:"#6b7280",fontSize:"0.7rem"}}> ({pct.toFixed(1)}%)</span>
-                  </span>
+                  <span><span style={{color:"#facc15",fontWeight:700}}>{fmt(v)}</span>
+                    <span style={{color:"#6b7280",fontSize:"0.7rem"}}> ({pct.toFixed(1)}%)</span></span>
                 </div>
-                <div style={{...S.progressBg,height:8}}>
-                  <div style={{...S.progressFill,width:`${pct}%`,background:cl}}/>
-                </div>
+                <div style={{...S.progressBg,height:8}}><div style={{...S.progressFill,width:`${pct}%`,background:cl}}/></div>
               </div>
             );
           })}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid #334155",fontSize:"0.85rem"}}>
-            <span style={{color:"#d1d5db",fontWeight:700}}>মোট খরচ</span>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid #334155"}}>
+            <span style={{color:"#d1d5db",fontWeight:700,fontSize:"0.85rem"}}>মোট খরচ</span>
             <span style={{color:"#f87171",fontWeight:800}}>{fmt(totalExp)}</span>
           </div>
         </div>
       </div>
 
-      {/* ── Investment Platform Breakdown ── */}
+      {/* Investment breakdown */}
       <div style={S.card}>
-        <div style={{...S.cardHead,background:"linear-gradient(90deg,#312e81,#4c1d95)"}}>
-          🏦 খাতওয়ারি বিনিয়োগ — কোথায় কত
-        </div>
+        <div style={{...S.cardHead,background:"linear-gradient(90deg,#312e81,#4c1d95)"}}>🏦 খাতওয়ারি বিনিয়োগ</div>
         {[
           {label:"✅ Safe",   val:safeTotal,  color:"#4ade80", platforms:SAFE_OPTIONS},
           {label:"🌟 Medium", val:medTotal,   color:"#facc15", platforms:MEDIUM_OPTIONS},
@@ -555,9 +512,7 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
               <span style={{color:tier.color,fontWeight:700,fontSize:"0.88rem"}}>{tier.label}</span>
               <span style={{color:tier.color,fontWeight:800}}>{fmt(tier.val)}</span>
             </div>
-            {allInvest>0&&<div style={{...S.progressBg,marginBottom:8}}>
-              <div style={{...S.progressFill,width:`${tier.val/allInvest*100}%`,background:tier.color}}/>
-            </div>}
+            {allInvest>0&&<div style={{...S.progressBg,marginBottom:8}}><div style={{...S.progressFill,width:`${tier.val/allInvest*100}%`,background:tier.color}}/></div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
               {tier.platforms.map(p=>{
                 const v=platformTotals[p]||0;
@@ -565,10 +520,10 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
                 return (
                   <div key={p} style={{background:"#0f172a",borderRadius:10,padding:"8px 10px",
                     border:`1.5px solid ${v>0?cl+"55":"#334155"}`,display:"flex",flexDirection:"column",
-                    alignItems:"center",minWidth:80,opacity:v>0?1:0.4}}>
+                    alignItems:"center",minWidth:80,opacity:v>0?1:0.35}}>
                     <span style={{fontSize:"1.2rem"}}>{INVEST_ICONS[p]}</span>
                     <span style={{color:v>0?cl:"#6b7280",fontWeight:700,fontSize:"0.75rem",marginTop:2}}>{p}</span>
-                    <span style={{color:v>0?"#facc15":"#4b5563",fontWeight:800,fontSize:"0.82rem"}}>{v>0?fmt(v):"—"}</span>
+                    <span style={{color:v>0?"#facc15":"#4b5563",fontWeight:800,fontSize:"0.8rem"}}>{v>0?fmt(v):"—"}</span>
                     {v>0&&allInvest>0&&<span style={{color:"#6b7280",fontSize:"0.62rem"}}>{(v/allInvest*100).toFixed(1)}%</span>}
                   </div>
                 );
@@ -576,7 +531,6 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
             </div>
           </div>
         ))}
-        {/* Comparison bars */}
         {allInvest>0&&(
           <div style={{padding:14}}>
             <div style={{color:"#94a3b8",fontSize:"0.78rem",fontWeight:700,marginBottom:10}}>📊 তুলনামূলক চিত্র</div>
@@ -599,13 +553,12 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
         )}
       </div>
 
-      {/* Monthly Table */}
+      {/* Monthly table */}
       <div style={S.card}>
         <div style={{...S.cardHead,background:"linear-gradient(90deg,#14532d,#166534)"}}>📅 মাসওয়ারি পারফরম্যান্স</div>
         <div style={{overflowX:"auto"}}>
           <table style={S.table}>
-            <thead><tr>{["মাস","ইনকাম","খরচ","সেভিং","Safe","Medium","High","সেভিং%"].map(h=>
-              <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["মাস","ইনকাম","খরচ","সেভিং","Safe","Medium","High","সেভিং%"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
             <tbody>
               {dashData.map((d,i)=>(
                 <tr key={i} style={{background:i%2===0?"#1a2332":"#111827"}}>
@@ -616,14 +569,13 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
                   <td style={{...S.td,color:"#4ade80"}}>{d.investSafe>0?fmt(d.investSafe):"—"}</td>
                   <td style={{...S.td,color:"#facc15"}}>{d.investMedium>0?fmt(d.investMedium):"—"}</td>
                   <td style={{...S.td,color:"#f87171"}}>{d.investHigh>0?fmt(d.investHigh):"—"}</td>
-                  <td style={{...S.td,color:d.savingPct>=20?"#4ade80":"#f87171"}}>
-                    {d.totalIncome>0?`${d.savingPct.toFixed(1)}%`:"—"}</td>
+                  <td style={{...S.td,color:d.savingPct>=20?"#4ade80":"#f87171"}}>{d.totalIncome>0?`${d.savingPct.toFixed(1)}%`:"—"}</td>
                 </tr>
               ))}
               <tr style={{background:"#0f172a",borderTop:"2px solid #facc15"}}>
-                {[{v:"মোট",c:"#facc15"},{v:fmt(grandTotal.income),c:"#4ade80"},
-                  {v:fmt(grandTotal.expense),c:"#f87171"},{v:fmt(grandTotal.saving),c:"#60a5fa"},
-                  {v:fmt(joruriFund),c:"#4ade80"},{v:fmt(dashData.reduce((a,d)=>a+d.investMedium,0)),c:"#facc15"},
+                {[{v:"মোট",c:"#facc15"},{v:fmt(grandTotal.income),c:"#4ade80"},{v:fmt(grandTotal.expense),c:"#f87171"},
+                  {v:fmt(grandTotal.saving),c:"#60a5fa"},{v:fmt(joruriFund),c:"#4ade80"},
+                  {v:fmt(dashData.reduce((a,d)=>a+d.investMedium,0)),c:"#facc15"},
                   {v:fmt(dashData.reduce((a,d)=>a+d.investHigh,0)),c:"#f87171"},
                   {v:grandTotal.income>0?`${(grandTotal.saving/grandTotal.income*100).toFixed(1)}%`:"—",c:"#a78bfa"},
                 ].map((c,i)=><td key={i} style={{...S.td,color:c.c,fontWeight:700}}>{c.v}</td>)}
@@ -642,55 +594,69 @@ function DashboardView({dashData,grandTotal,joruriFund,investFund,platformTotals
 function UserManager({users,setUsers,onClose}) {
   const [newU,setNewU]=useState({username:"",password:"",name:"",role:"user"});
   const [err,setErr]=useState("");
+  const [success,setSuccess]=useState("");
 
   const addUser=()=>{
     if(!newU.username||!newU.password||!newU.name){setErr("সব ফিল্ড পূরণ করুন");return;}
     if(users.find(u=>u.username===newU.username)){setErr("Username ইতিমধ্যে আছে");return;}
     const id="u"+Date.now();
-    setUsers(prev=>[...prev,{...newU,id}]);
+    const updated=[...users,{...newU,id}];
+    setUsers(updated);
+    saveUsers(updated); // ← সাথে সাথে localStorage-এ save
     setNewU({username:"",password:"",name:"",role:"user"});
     setErr("");
+    setSuccess(`✅ ${newU.name} যোগ হয়েছে! এখন যেকোনো browser-এ login করতে পারবে।`);
+    setTimeout(()=>setSuccess(""),4000);
   };
-  const removeUser=(id)=>setUsers(prev=>prev.filter(u=>u.id!==id&&u.role!=="admin"));
+
+  const removeUser=(id)=>{
+    const updated=users.filter(u=>u.id!==id);
+    setUsers(updated);
+    saveUsers(updated);
+  };
 
   return (
-    <div style={{position:"fixed",inset:0,background:"#000000bb",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#111827",border:"1px solid #334155",borderRadius:16,padding:24,width:"90%",maxWidth:480,maxHeight:"85vh",overflowY:"auto"}}>
+    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#111827",border:"1px solid #334155",borderRadius:16,padding:24,width:"100%",maxWidth:460,maxHeight:"85vh",overflowY:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}>
           <div style={{color:"#facc15",fontWeight:800,fontSize:"1rem"}}>👥 User Manager</div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:"1.2rem",cursor:"pointer"}}>✕</button>
         </div>
-        {/* Add User */}
+
         <div style={{background:"#0f172a",borderRadius:10,padding:14,marginBottom:14}}>
           <div style={{color:"#60a5fa",fontWeight:700,fontSize:"0.82rem",marginBottom:10}}>➕ নতুন ইউজার যোগ করুন</div>
-          {[{p:"নাম",k:"name"},{p:"Username",k:"username"},{p:"Password",k:"password"}].map(f=>(
+          {[{p:"পুরো নাম",k:"name"},{p:"Username (login এ ব্যবহার হবে)",k:"username"},{p:"Password",k:"password"}].map(f=>(
             <input key={f.k} style={{...S.loginInput,marginBottom:8}} placeholder={f.p}
               value={newU[f.k]} onChange={e=>setNewU(prev=>({...prev,[f.k]:e.target.value}))}
-              type={f.k==="password"?"password":"text"} />
+              type={f.k==="password"?"password":"text"}/>
           ))}
-          <select style={{...S.loginInput,marginBottom:10}} value={newU.role}
-            onChange={e=>setNewU(prev=>({...prev,role:e.target.value}))}>
-            <option value="user">User</option>
+          <select style={{...S.loginInput,marginBottom:10}} value={newU.role} onChange={e=>setNewU(prev=>({...prev,role:e.target.value}))}>
+            <option value="user">User (সাধারণ)</option>
             <option value="admin">Admin</option>
           </select>
-          {err&&<div style={{color:"#f87171",fontSize:"0.75rem",marginBottom:8}}>{err}</div>}
-          <button onClick={addUser} style={S.loginBtn}>ইউজার যোগ করুন</button>
+          {err&&<div style={{color:"#f87171",fontSize:"0.78rem",marginBottom:8}}>{err}</div>}
+          {success&&<div style={{color:"#4ade80",fontSize:"0.78rem",marginBottom:8}}>{success}</div>}
+          <button onClick={addUser} style={S.loginBtn}>➕ ইউজার যোগ করুন</button>
         </div>
-        {/* User list */}
-        <div style={{color:"#94a3b8",fontSize:"0.78rem",marginBottom:8}}>বর্তমান ইউজার ({users.length})</div>
+
+        <div style={{color:"#94a3b8",fontSize:"0.78rem",marginBottom:10}}>
+          মোট ইউজার: {users.length} জন
+        </div>
         {users.map(u=>(
           <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-            background:"#1e293b",borderRadius:8,padding:"8px 12px",marginBottom:6}}>
+            background:"#1e293b",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
             <div>
-              <span style={{color:"#facc15",fontWeight:700,fontSize:"0.85rem"}}>{u.name}</span>
-              <span style={{color:"#94a3b8",fontSize:"0.72rem",marginLeft:8}}>@{u.username}</span>
-              <span style={{color:u.role==="admin"?"#f87171":"#4ade80",fontSize:"0.68rem",marginLeft:6,
-                background:u.role==="admin"?"#7f1d1d22":"#14532d22",padding:"1px 6px",borderRadius:8}}>
-                {u.role}</span>
+              <div style={{color:"#facc15",fontWeight:700,fontSize:"0.88rem"}}>{u.name}</div>
+              <div style={{color:"#94a3b8",fontSize:"0.72rem",marginTop:2}}>
+                👤 {u.username} &nbsp;
+                <span style={{color:u.role==="admin"?"#f87171":"#4ade80",
+                  background:u.role==="admin"?"#7f1d1d44":"#14532d44",
+                  padding:"1px 7px",borderRadius:8,fontSize:"0.65rem"}}>{u.role}</span>
+              </div>
             </div>
             {u.role!=="admin"&&(
               <button onClick={()=>removeUser(u.id)} style={{background:"#7f1d1d",border:"none",color:"#fca5a5",
-                fontSize:"0.7rem",padding:"3px 8px",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>
+                fontSize:"0.72rem",padding:"4px 10px",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>
                 মুছুন
               </button>
             )}
@@ -709,32 +675,32 @@ function generatePDF({month,monthLabel,data,calc,fmt,sym,selectedYear,currentUse
   const medMap =splitEqually(calc.investMedium,data.investChoice.medium);
   const highMap=splitEqually(calc.investHigh,data.investChoice.high);
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>${monthLabel} ${selectedYear} - Budget Report</title>
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${monthLabel} ${selectedYear}</title>
   <style>
     body{font-family:Arial,sans-serif;background:#fff;color:#111;margin:0;padding:24px;font-size:13px;}
-    h1{color:#1e40af;margin:0 0 4px;font-size:20px;} .sub{color:#6b7280;font-size:12px;margin-bottom:20px;}
+    h1{color:#1e40af;margin:0 0 4px;font-size:20px;}
+    .sub{color:#6b7280;font-size:12px;margin-bottom:20px;}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
     .card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;}
-    .card .val{font-size:15px;font-weight:800;color:#1e40af;} .card .lbl{font-size:11px;color:#6b7280;margin-top:3px;}
+    .card .val{font-size:15px;font-weight:800;color:#1e40af;}
+    .card .lbl{font-size:11px;color:#6b7280;margin-top:3px;}
     table{width:100%;border-collapse:collapse;margin-bottom:16px;}
     th{background:#1e3a5f;color:#fff;padding:8px 10px;font-size:11px;text-align:left;}
     td{padding:7px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;}
     tr:nth-child(even) td{background:#f8fafc;}
     .section{font-weight:800;color:#1e40af;margin:16px 0 8px;font-size:13px;border-left:3px solid #1e40af;padding-left:8px;}
-    .invest-chip{display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 10px;margin:3px;font-size:11px;}
+    .chip{display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 10px;margin:3px;font-size:11px;}
     .footer{margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#9ca3af;text-align:center;}
   </style></head><body>
   <h1>💰 বাজেট রিপোর্ট — ${monthLabel} ${selectedYear}</h1>
-  <div class="sub">👤 ${currentUser.name} &nbsp;|&nbsp; মুদ্রা: ${sym} &nbsp;|&nbsp; তৈরি: ${new Date().toLocaleString()}</div>
-
+  <div class="sub">👤 ${currentUser.name} | মুদ্রা: ${sym} | তৈরি: ${new Date().toLocaleString()}</div>
   <div class="grid">
     <div class="card"><div class="val">${fmt(calc.totalIncome)}</div><div class="lbl">মোট ইনকাম</div></div>
     <div class="card"><div class="val">${fmt(calc.totalExpense)}</div><div class="lbl">মোট খরচ</div></div>
     <div class="card"><div class="val">${fmt(calc.totalSaving)}</div><div class="lbl">সেভিং</div></div>
     <div class="card"><div class="val">${calc.savingPct.toFixed(1)}%</div><div class="lbl">সেভিং রেট</div></div>
   </div>
-
   <div class="section">📈 ইনকাম</div>
   <table><tr><th>খাত</th><th>পরিমাণ</th></tr>
     <tr><td>বেতন</td><td>${fmt(num(data.income.beton))}</td></tr>
@@ -742,37 +708,28 @@ function generatePDF({month,monthLabel,data,calc,fmt,sym,selectedYear,currentUse
     <tr><td>অন্যান্য</td><td>${fmt(num(data.income.onnyo))}</td></tr>
     <tr><td><b>মোট</b></td><td><b>${fmt(calc.totalIncome)}</b></td></tr>
   </table>
-
   <div class="section">📉 খরচ</div>
   <table><tr><th>খাত</th><th>পরিমাণ</th><th>%</th></tr>
-    ${Object.entries(EXP_LABELS).map(([k,l])=>`
-    <tr><td>${EXP_ICONS[k]} ${l}</td><td>${fmt(calc.expBreakdown?.[k]||0)}</td>
-    <td>${calc.totalExpense>0?((calc.expBreakdown?.[k]||0)/calc.totalExpense*100).toFixed(1):0}%</td></tr>`).join("")}
+    ${Object.entries(EXP_LABELS).map(([k,l])=>`<tr><td>${EXP_ICONS[k]} ${l}</td><td>${fmt(calc.expBreakdown?.[k]||0)}</td><td>${calc.totalExpense>0?((calc.expBreakdown?.[k]||0)/calc.totalExpense*100).toFixed(1):0}%</td></tr>`).join("")}
     <tr><td><b>মোট</b></td><td><b>${fmt(calc.totalExpense)}</b></td><td>100%</td></tr>
   </table>
-
-  <div class="section">🎯 50/30/20 টার্গেট</div>
+  <div class="section">🎯 50/30/20</div>
   <table><tr><th>ক্যাটাগরি</th><th>টার্গেট</th><th>পরিমাণ</th></tr>
-    <tr><td>✅ Need (50%)</td><td>50%</td><td>${fmt(calc.needs)}</td></tr>
-    <tr><td>🌟 Want (30%)</td><td>30%</td><td>${fmt(calc.wants)}</td></tr>
-    <tr><td>💰 Save (20%)</td><td>20%</td><td>${fmt(calc.saving20)}</td></tr>
+    <tr><td>✅ Need</td><td>50%</td><td>${fmt(calc.needs)}</td></tr>
+    <tr><td>🌟 Want</td><td>30%</td><td>${fmt(calc.wants)}</td></tr>
+    <tr><td>💰 Save</td><td>20%</td><td>${fmt(calc.saving20)}</td></tr>
   </table>
-
   <div class="section">🚀 ইনভেস্টমেন্ট</div>
   <table><tr><th>টায়ার</th><th>%</th><th>পরিমাণ</th><th>প্ল্যাটফর্ম</th></tr>
-    <tr><td>Safe</td><td>50%</td><td>${fmt(calc.investSafe)}</td>
-      <td>${Object.entries(safeMap).map(([k,v])=>`<span class="invest-chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
-    <tr><td>Medium</td><td>30%</td><td>${fmt(calc.investMedium)}</td>
-      <td>${Object.entries(medMap).map(([k,v])=>`<span class="invest-chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
-    <tr><td>High Risk</td><td>20%</td><td>${fmt(calc.investHigh)}</td>
-      <td>${Object.entries(highMap).map(([k,v])=>`<span class="invest-chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
+    <tr><td>Safe</td><td>50%</td><td>${fmt(calc.investSafe)}</td><td>${Object.entries(safeMap).map(([k,v])=>`<span class="chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
+    <tr><td>Medium</td><td>30%</td><td>${fmt(calc.investMedium)}</td><td>${Object.entries(medMap).map(([k,v])=>`<span class="chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
+    <tr><td>High Risk</td><td>20%</td><td>${fmt(calc.investHigh)}</td><td>${Object.entries(highMap).map(([k,v])=>`<span class="chip">${INVEST_ICONS[k]} ${k}: ${fmt(v)}</span>`).join("")}</td></tr>
     <tr><td><b>মোট</b></td><td></td><td><b>${fmt(calc.totalInvest)}</b></td><td></td></tr>
   </table>
-
   <div class="footer">বাজেট ম্যানেজার — ${currentUser.name} — ${monthLabel} ${selectedYear}</div>
   </body></html>`;
 
-  const w = window.open("","_blank");
+  const w=window.open("","_blank");
   w.document.write(html);
   w.document.close();
   w.focus();
@@ -853,11 +810,11 @@ function RuleCard({emoji,title,sub,pct,val,color}) {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   root:        {fontFamily:"'Noto Sans Bengali','Segoe UI',sans-serif",background:"#0a0f1a",minHeight:"100vh",color:"#f1f5f9"},
   header:      {background:"linear-gradient(135deg,#0f172a,#1e293b)",padding:"12px 14px 10px",borderBottom:"1px solid #1e3a5f"},
-  headerInner: {display:"flex",justifyContent:"space-between",alignItems:"center"},
+  headerInner: {display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8},
   headerTitle: {fontSize:"1.1rem",fontWeight:800,color:"#facc15"},
   headerSub:   {fontSize:"0.7rem",color:"#94a3b8",marginTop:2},
   tabBar:      {background:"#0f172a",borderBottom:"1px solid #1e293b",position:"sticky",top:0,zIndex:100},
